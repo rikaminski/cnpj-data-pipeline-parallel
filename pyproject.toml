@@ -1,0 +1,29 @@
+[project]
+name = "cnpj-data-pipeline"
+version = "1.3.0"
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg2-binary>=2.9.9",
+    "requests>=2.31.0",
+    "tqdm>=4.66.0",
+    "python-dotenv>=1.0.0",
+    "polars>=1.0.0",
+]
+
+[project.scripts]
+cnpj-pipeline = "main:main"
+
+[tool.setuptools]
+py-modules = ["config", "database", "downloader", "processor", "main"]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+commit_message = "chore(release): {version} [skip ci]"
+upload_to_pypi = false
+
+[tool.semantic_release.changelog]
+changelog_file = ""
+
+[tool.semantic_release.publish]
+upload_to_vcs_release = true
