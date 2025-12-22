@@ -1,0 +1,2 @@
+-- This file is no longer needed - indexes are not created in initial.sql
+-- They will only be created after data load via create_indexes.sql

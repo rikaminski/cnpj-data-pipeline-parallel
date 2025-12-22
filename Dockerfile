@@ -5,12 +5,11 @@ WORKDIR /app
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# Copy project files
-COPY pyproject.toml .
-COPY config.py database.py downloader.py processor.py main.py ./
+# Copy everything
+COPY . .
 
-# Install dependencies
-RUN uv pip install --system -e .
+# Install dependencies (no editable mode)
+RUN uv pip install --system .
 
 # Create temp directory
 RUN mkdir -p /app/temp
