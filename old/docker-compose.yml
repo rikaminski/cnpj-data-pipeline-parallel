@@ -19,19 +19,8 @@ services:
     restart: "no"
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:16-alpine
     container_name: cnpj-pipeline-postgres
-    command: >
-      postgres
-      -c shared_buffers=2GB
-      -c work_mem=256MB
-      -c maintenance_work_mem=1GB
-      -c wal_buffers=256MB
-      -c max_wal_size=16GB
-      -c checkpoint_timeout=30min
-      -c synchronous_commit=off
-      -c autovacuum=off
-      -c fsync=off
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

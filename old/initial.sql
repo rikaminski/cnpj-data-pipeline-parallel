@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS qualificacoes_socios (
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS empresas (
-    cnpj_basico VARCHAR(8) NOT NULL,
+    cnpj_basico VARCHAR(8) PRIMARY KEY,
     razao_social TEXT,
     natureza_juridica VARCHAR(4),
     qualificacao_responsavel VARCHAR(2),
@@ -95,7 +95,8 @@ CREATE TABLE IF NOT EXISTS estabelecimentos (
     situacao_especial TEXT,
     data_situacao_especial DATE,
     data_criacao TIMESTAMP DEFAULT NOW() NOT NULL,
-    data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL
+    data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL,
+    PRIMARY KEY (cnpj_basico, cnpj_ordem, cnpj_dv)
 );
 
 CREATE TABLE IF NOT EXISTS socios (
@@ -111,11 +112,12 @@ CREATE TABLE IF NOT EXISTS socios (
     qualificacao_do_representante_legal VARCHAR(2),
     faixa_etaria VARCHAR(1),
     data_criacao TIMESTAMP DEFAULT NOW() NOT NULL,
-    data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL
+    data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL,
+    PRIMARY KEY (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio)
 );
 
 CREATE TABLE IF NOT EXISTS dados_simples (
-    cnpj_basico VARCHAR(8) NOT NULL,
+    cnpj_basico VARCHAR(8) PRIMARY KEY,
     opcao_pelo_simples VARCHAR(1),
     data_opcao_pelo_simples DATE,
     data_exclusao_do_simples DATE,
@@ -137,4 +139,12 @@ CREATE TABLE IF NOT EXISTS processed_files (
     PRIMARY KEY (directory, filename)
 );
 
--- Indexes will be created after data load for better performance
+-- ============================================================================
+-- Indexes
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_estabelecimentos_uf ON estabelecimentos(uf);
+CREATE INDEX IF NOT EXISTS idx_estabelecimentos_municipio ON estabelecimentos(municipio);
+CREATE INDEX IF NOT EXISTS idx_estabelecimentos_situacao ON estabelecimentos(situacao_cadastral);
+CREATE INDEX IF NOT EXISTS idx_estabelecimentos_cnae ON estabelecimentos(cnae_fiscal_principal);
+CREATE INDEX IF NOT EXISTS idx_socios_cnpj_basico ON socios(cnpj_basico);

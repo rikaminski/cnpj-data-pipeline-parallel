@@ -1,30 +1,22 @@
 [project]
-name = "cnpj-data-pipeline"
-version = "1.3.0"
-requires-python = ">=3.11"
+name = "cnpj-data-pipeline-parallel"
+version = "0.1.0"
+description = "High-performance CNPJ data pipeline with parallel processing"
+requires-python = ">=3.12"
 dependencies = [
-    "psycopg[binary]>=3.2.3",
-    "psutil>=6.1.1",
-    "requests>=2.31.0",
-    "tqdm>=4.66.0",
+    "polars>=0.20.0",
+    "psycopg[binary]>=3.0.0",
+    "adbc-driver-postgresql>=0.8.0",
+    "adbc-driver-manager>=0.8.0",
+    "pyarrow>=15.0.0",
+    "psutil>=5.9.0",
     "python-dotenv>=1.0.0",
-    "polars>=1.0.0",
 ]
 
-[project.scripts]
-cnpj-pipeline = "main:main"
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools]
-py-modules = ["config", "database", "downloader", "processor", "main", "utils"]
-
-[tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
-branch = "main"
-commit_message = "chore(release): {version} [skip ci]"
-upload_to_pypi = false
-
-[tool.semantic_release.changelog]
-changelog_file = ""
-
-[tool.semantic_release.publish]
-upload_to_vcs_release = true
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+py-modules = ["config", "database", "processor", "main", "utils"]

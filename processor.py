@@ -9,6 +9,17 @@ import polars as pl
 
 logger = logging.getLogger(__name__)
 
+# Reference tables (small, can all run in parallel)
+REFERENCE_TYPES = ["CNAECSV", "MOTICSV", "MUNICCSV", "NATJUCSV", "PAISCSV", "QUALSCSV"]
+
+def get_optimal_batch_size(file_type: str) -> int:
+    """Return optimal batch size based on file type."""
+    if file_type in REFERENCE_TYPES:
+        return 10000  # Small tables
+    else:
+        return 500000  # All data files use same batch size
+
+
 # File pattern → table name mapping
 FILE_MAPPINGS = {
     "CNAECSV": "cnaes",
@@ -171,17 +182,16 @@ def process_csv_file(
             infer_schema_length=0,
             null_values=[""],
             ignore_errors=True,
-            batch_size=batch_size,
+            batch_size=actual_batch_size,
         )
 
         # Get multiple batches at once to allow overlap between CPU and IO
-        # While Postgres is writing batch N, we can be reading/transforming batch N+1
         batches = reader.next_batches(10)
         while batches:
             for df in batches:
                 df = _transform(df, file_type)
-                # Deduplicate in Polars (fast) before sending to Postgres
-                df = _deduplicate(df, file_type)
+                # Dedup within batch using Polars (fast) - ON CONFLICT handles cross-batch
+                df = _deduplicate_batch(df, file_type)
                 yield df, table_name, columns
             batches = reader.next_batches(10)
 
@@ -190,9 +200,8 @@ def process_csv_file(
         raise
 
 
-def _deduplicate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
-    """Deduplicate DataFrame based on primary keys."""
-    # Primary key columns by table type
+def _deduplicate_batch(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
+    """Deduplicate within batch using Polars (fast)."""
     pk_columns = {
         "EMPRECSV": ["cnpj_basico"],
         "ESTABELE": ["cnpj_basico", "cnpj_ordem", "cnpj_dv"],
@@ -202,10 +211,9 @@ def _deduplicate(df: pl.DataFrame, file_type: str) -> pl.DataFrame:
     
     if file_type in pk_columns:
         pks = pk_columns[file_type]
-        # Keep only columns that exist in the DataFrame
         existing_pks = [pk for pk in pks if pk in df.columns]
         if existing_pks:
-            df = df.unique(subset=existing_pks, keep="last")
+            df = df.unique(subset=existing_pks, keep="first")
     
     return df
 

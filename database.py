@@ -1,20 +1,21 @@
 """PostgreSQL database operations with Psycopg3 for fast bulk loading."""
 
+import io
 import logging
 from typing import List, Set
 
 import polars as pl
 import psycopg
-from psycopg import sql
 
 logger = logging.getLogger(__name__)
 
 
 class Database:
-    """PostgreSQL database handler using direct COPY (no temp tables)."""
+    """PostgreSQL database handler with temp table upsert."""
 
     def __init__(self, database_url: str):
         self.database_url = database_url
+        self._pk_cache: dict = {}
         self.conn = None
 
     def connect(self):
@@ -39,79 +40,27 @@ class Database:
             self.conn.close()
             self.conn = None
 
-    def get_processed_files(self, directory: str) -> Set[str]:
-        """Get all processed filenames for a directory."""
-        self.connect()
-        try:
-            with self.conn.cursor() as cur:
-                cur.execute(
-                    "SELECT filename FROM processed_files WHERE directory = %s",
-                    (directory,),
-                )
-                return {row[0] for row in cur.fetchall()}
-        except Exception:
-            return set()
-
-    def mark_processed(self, directory: str, filename: str):
-        """Mark a file as processed."""
-        self.connect()
-        try:
-            with self.conn.cursor() as cur:
-                cur.execute(
-                    """INSERT INTO processed_files (directory, filename)
-                       VALUES (%s, %s)
-                       ON CONFLICT (directory, filename) DO NOTHING""",
-                    (directory, filename),
-                )
-                self.conn.commit()
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"Error marking file as processed: {e}")
-
-    def clear_processed_files(self, directory: str):
-        """Clear all processed file records for a directory."""
-        self.connect()
-        try:
-            with self.conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM processed_files WHERE directory = %s",
-                    (directory,),
-                )
-                self.conn.commit()
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"Error clearing processed files: {e}")
-
     def bulk_load(self, df: pl.DataFrame, table_name: str, columns: List[str]):
-        """
-        Direct COPY to table (no temp table, no upsert).
-        Data must be deduplicated in Polars before calling this.
-        """
+        """Direct COPY to table (fast, no temp table, no upsert)."""
         if df.is_empty():
             return
 
         self.connect()
 
         try:
-            import io
-            
-            # Write CSV directly to BytesIO
+            # Write CSV to BytesIO
             csv_buffer = io.BytesIO()
             df.write_csv(csv_buffer, include_header=False)
             csv_bytes = csv_buffer.getvalue()
             
-            # Remove null bytes if present
+            # Remove null bytes
             if b"\x00" in csv_bytes:
                 csv_bytes = csv_bytes.replace(b"\x00", b"")
 
-            # Direct COPY to final table
-            columns_sql = sql.SQL(", ").join(sql.Identifier(col) for col in columns)
-            copy_query = sql.SQL("COPY {} ({}) FROM STDIN WITH (FORMAT CSV, ENCODING 'UTF8')").format(
-                sql.Identifier(table_name), columns_sql
-            )
-
+            # Direct COPY to table
+            columns_str = ", ".join([f'"{col}"' for col in columns])
             with self.conn.cursor() as cur:
-                with cur.copy(copy_query) as copy:
+                with cur.copy(f'COPY {table_name} ({columns_str}) FROM STDIN WITH CSV ENCODING \'UTF8\'') as copy:
                     copy.write(csv_bytes)
             
             self.conn.commit()
@@ -120,3 +69,4 @@ class Database:
             self.conn.rollback()
             logger.error(f"Error in bulk_load for {table_name}: {e}")
             raise
+

@@ -31,10 +31,9 @@ def get_optimal_batch_size(file_type: str) -> int:
     """Return optimal batch size based on file type."""
     if file_type in REFERENCE_TYPES:
         return 10000  # Small tables, small batches
-    elif file_type == "ESTABELE":
-        return 1000000  # Huge table, large batches
     else:
-        return 500000  # Default
+        return 500000  # All data files use same batch size
+
 
 def extract_and_process(zip_path: Path, database_url: str) -> bool:
     """Extract ZIP, process CSV, ingest to DB, and cleanup CSV."""
@@ -108,16 +107,14 @@ def create_indexes(database_url: str):
     try:
         db.connect()
         
-        # Read SQL file
+        # Read and execute entire SQL file at once
+        # (Don't split by semicolon - breaks DO $$ blocks)
         with open("create_indexes.sql") as f:
-            statements = [s.strip() for s in f.read().split(';') if s.strip() and not s.strip().startswith('--')]
+            sql_content = f.read()
         
-        # Execute index creation statements
+        logger.info("Executing create_indexes.sql...")
         with db.conn.cursor() as cur:
-            for stmt in statements:
-                if 'VACUUM' not in stmt.upper():
-                    logger.info(f"Executing: {stmt[:60]}...")
-                    cur.execute(stmt)
+            cur.execute(sql_content)
         db.conn.commit()
         
         # VACUUM requires autocommit mode
@@ -172,10 +169,10 @@ def main():
             for future in as_completed(futures):
                 future.result()
     
-    # Phase 2: Process data files with controlled parallelism
-    logger.info(f"Phase 2: Processing {len(data_files)} data files (3 workers)...")
+    # Phase 2: Process data files with 2 workers (optimal for I/O-bound workload)
+    logger.info(f"Phase 2: Processing {len(data_files)} data files (2 workers)...")
     
-    with ProcessPoolExecutor(max_workers=3) as executor:
+    with ProcessPoolExecutor(max_workers=2) as executor:
         futures = {
             executor.submit(extract_and_process, f, config.database_url): f.name
             for f in data_files
