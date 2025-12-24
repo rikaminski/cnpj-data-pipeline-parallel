@@ -1,0 +1,17 @@
+temp/
+.git/
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+dist/
+build/
+.agent/
+brain/
+benchmark/
+scripts/
+old/
+downloads/
+data/
+*.zip
+*.csv

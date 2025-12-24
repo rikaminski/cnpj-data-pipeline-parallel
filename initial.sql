@@ -48,10 +48,10 @@ CREATE TABLE IF NOT EXISTS qualificacoes_socios (
 );
 
 -- ============================================================================
--- Main Tables
+-- Main Tables (UNLOGGED for performance during bulk load)
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS empresas (
+CREATE UNLOGGED TABLE IF NOT EXISTS empresas (
     cnpj_basico VARCHAR(8) NOT NULL,
     razao_social TEXT,
     natureza_juridica VARCHAR(4),
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS empresas (
     data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS estabelecimentos (
+CREATE UNLOGGED TABLE IF NOT EXISTS estabelecimentos (
     cnpj_basico VARCHAR(8) NOT NULL,
     cnpj_ordem VARCHAR(4) NOT NULL,
     cnpj_dv VARCHAR(2) NOT NULL,
@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS estabelecimentos (
     data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS socios (
+CREATE UNLOGGED TABLE IF NOT EXISTS socios (
     cnpj_basico VARCHAR(8) NOT NULL,
     identificador_de_socio VARCHAR(1) NOT NULL,
     nome_socio TEXT,
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS socios (
     data_atualizacao TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS dados_simples (
+CREATE UNLOGGED TABLE IF NOT EXISTS dados_simples (
     cnpj_basico VARCHAR(8) NOT NULL,
     opcao_pelo_simples VARCHAR(1),
     data_opcao_pelo_simples DATE,

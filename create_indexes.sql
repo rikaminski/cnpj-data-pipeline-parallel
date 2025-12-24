@@ -1,59 +1,50 @@
--- Create indexes and handle duplicates conditionally
--- Strategy: Try CREATE UNIQUE INDEX, if fails due to duplicates, clean and retry
+-- BLOCK: empresas
+CREATE TABLE empresas_new AS 
+SELECT DISTINCT ON (cnpj_basico) * 
+FROM empresas 
+ORDER BY cnpj_basico, data_atualizacao DESC;
 
--- Empresas
-DO $$
-BEGIN
-    CREATE UNIQUE INDEX idx_empresas_pk ON empresas(cnpj_basico);
-EXCEPTION WHEN unique_violation THEN
-    RAISE NOTICE 'Duplicates found in empresas, cleaning...';
-    DELETE FROM empresas a USING empresas b 
-    WHERE a.ctid > b.ctid AND a.cnpj_basico = b.cnpj_basico;
-    CREATE UNIQUE INDEX idx_empresas_pk ON empresas(cnpj_basico);
-END $$;
+DROP TABLE empresas;
+ALTER TABLE empresas_new RENAME TO empresas;
+ALTER TABLE empresas ADD PRIMARY KEY (cnpj_basico);
+ALTER TABLE empresas SET LOGGED;
 
--- Estabelecimentos
-DO $$
-BEGIN
-    CREATE UNIQUE INDEX idx_estabelecimentos_pk ON estabelecimentos(cnpj_basico, cnpj_ordem, cnpj_dv);
-EXCEPTION WHEN unique_violation THEN
-    RAISE NOTICE 'Duplicates found in estabelecimentos, cleaning...';
-    DELETE FROM estabelecimentos a USING estabelecimentos b 
-    WHERE a.ctid > b.ctid 
-      AND a.cnpj_basico = b.cnpj_basico 
-      AND a.cnpj_ordem = b.cnpj_ordem 
-      AND a.cnpj_dv = b.cnpj_dv;
-    CREATE UNIQUE INDEX idx_estabelecimentos_pk ON estabelecimentos(cnpj_basico, cnpj_ordem, cnpj_dv);
-END $$;
+-- BLOCK: estabelecimentos
+CREATE TABLE estabelecimentos_new AS 
+SELECT DISTINCT ON (cnpj_basico, cnpj_ordem, cnpj_dv) * 
+FROM estabelecimentos 
+ORDER BY cnpj_basico, cnpj_ordem, cnpj_dv, data_atualizacao DESC;
 
--- Socios
-DO $$
-BEGIN
-    CREATE UNIQUE INDEX idx_socios_pk ON socios(cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio);
-EXCEPTION WHEN unique_violation THEN
-    RAISE NOTICE 'Duplicates found in socios, cleaning...';
-    DELETE FROM socios a USING socios b 
-    WHERE a.ctid > b.ctid 
-      AND a.cnpj_basico = b.cnpj_basico 
-      AND a.identificador_de_socio = b.identificador_de_socio 
-      AND a.cnpj_cpf_do_socio = b.cnpj_cpf_do_socio;
-    CREATE UNIQUE INDEX idx_socios_pk ON socios(cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio);
-END $$;
+DROP TABLE estabelecimentos;
+ALTER TABLE estabelecimentos_new RENAME TO estabelecimentos;
+ALTER TABLE estabelecimentos ADD PRIMARY KEY (cnpj_basico, cnpj_ordem, cnpj_dv);
+ALTER TABLE estabelecimentos SET LOGGED;
 
--- Dados Simples
-DO $$
-BEGIN
-    CREATE UNIQUE INDEX idx_dados_simples_pk ON dados_simples(cnpj_basico);
-EXCEPTION WHEN unique_violation THEN
-    RAISE NOTICE 'Duplicates found in dados_simples, cleaning...';
-    DELETE FROM dados_simples a USING dados_simples b 
-    WHERE a.ctid > b.ctid AND a.cnpj_basico = b.cnpj_basico;
-    CREATE UNIQUE INDEX idx_dados_simples_pk ON dados_simples(cnpj_basico);
-END $$;
+-- BLOCK: socios
+CREATE TABLE socios_new AS 
+SELECT DISTINCT ON (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio) * 
+FROM socios 
+ORDER BY cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio, data_atualizacao DESC;
 
--- Additional indexes for queries
-CREATE INDEX IF NOT EXISTS idx_estabelecimentos_uf ON estabelecimentos(uf);
-CREATE INDEX IF NOT EXISTS idx_estabelecimentos_municipio ON estabelecimentos(municipio);
-CREATE INDEX IF NOT EXISTS idx_estabelecimentos_situacao ON estabelecimentos(situacao_cadastral);
-CREATE INDEX IF NOT EXISTS idx_estabelecimentos_cnae ON estabelecimentos(cnae_fiscal_principal);
-CREATE INDEX IF NOT EXISTS idx_socios_cnpj_basico ON socios(cnpj_basico);
+DROP TABLE socios;
+ALTER TABLE socios_new RENAME TO socios;
+ALTER TABLE socios ADD PRIMARY KEY (cnpj_basico, identificador_de_socio, cnpj_cpf_do_socio);
+ALTER TABLE socios SET LOGGED;
+
+-- BLOCK: dados_simples
+CREATE TABLE dados_simples_new AS 
+SELECT DISTINCT ON (cnpj_basico) * 
+FROM dados_simples 
+ORDER BY cnpj_basico, data_atualizacao DESC;
+
+DROP TABLE dados_simples;
+ALTER TABLE dados_simples_new RENAME TO dados_simples;
+ALTER TABLE dados_simples ADD PRIMARY KEY (cnpj_basico);
+ALTER TABLE dados_simples SET LOGGED;
+
+-- BLOCK: additional_indexes
+CREATE INDEX idx_estabelecimentos_uf ON estabelecimentos(uf);
+CREATE INDEX idx_estabelecimentos_municipio ON estabelecimentos(municipio);
+CREATE INDEX idx_estabelecimentos_situacao ON estabelecimentos(situacao_cadastral);
+CREATE INDEX idx_estabelecimentos_cnae ON estabelecimentos(cnae_fiscal_principal);
+CREATE INDEX idx_socios_cnpj_basico ON socios(cnpj_basico);

@@ -101,33 +101,57 @@ def extract_and_process(zip_path: Path, database_url: str) -> bool:
 # No longer needed - indexes are not created in initial.sql
 
 def create_indexes(database_url: str):
-    """Create indexes after bulk load."""
-    logger.info("Creating indexes (this may take several minutes)...")
+    """Create indexes and reconstruct tables for global deduplication."""
+    logger.info("Starting Phase 3: Reconstruction and Indexing...")
     db = Database(database_url)
     try:
         db.connect()
         
-        # Read and execute entire SQL file at once
-        # (Don't split by semicolon - breaks DO $$ blocks)
         with open("create_indexes.sql") as f:
-            sql_content = f.read()
+            content = f.read()
         
-        logger.info("Executing create_indexes.sql...")
+        # Split by blocks
+        blocks = content.split("-- BLOCK:")
+        
         with db.conn.cursor() as cur:
-            cur.execute(sql_content)
-        db.conn.commit()
+            # Optimize for parallel sorting (crucial for DISTINCT ON)
+            cur.execute("SET max_parallel_workers_per_gather = 4")
+            cur.execute("SET max_parallel_workers = 8")
+            # Increase work_mem to 2GB for the session to avoid disk sorts
+            cur.execute("SET work_mem = '2GB'")
+            cur.execute("SET maintenance_work_mem = '4GB'")
+            
+            for block in blocks:
+                if not block.strip():
+                    continue
+                    
+                lines = block.strip().split("\n")
+                block_name = lines[0].strip()
+                sql = "\n".join(lines[1:]).strip()
+                
+                if sql:
+                    logger.info(f"Executing reconstruction block: {block_name}...")
+                    monitor = ResourceMonitor(interval=2.0)
+                    monitor.start()
+                    
+                    cur.execute(sql)
+                    db.conn.commit()
+                    
+                    summary = monitor.stop()
+                    from utils import log_resource_summary
+                    log_resource_summary(f"PHASE3-{block_name}", monitor.get_summary())
         
         # VACUUM requires autocommit mode
-        logger.info("Running VACUUM ANALYZE...")
+        logger.info("Running VACUUM ANALYZE to finalize...")
         old_autocommit = db.conn.autocommit
         db.conn.autocommit = True
         with db.conn.cursor() as cur:
             cur.execute("VACUUM ANALYZE")
         db.conn.autocommit = old_autocommit
         
-        logger.info("✓ All indexes created successfully")
+        logger.info("✓ Phase 3 completed successfully")
     except Exception as e:
-        logger.error(f"Error creating indexes: {e}")
+        logger.error(f"Error during reconstruction: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -152,8 +176,8 @@ def main():
     reference_files = [f for f in zip_files if get_file_type(f.name) in REFERENCE_TYPES]
     data_files = [f for f in zip_files if get_file_type(f.name) not in REFERENCE_TYPES]
     
-    # Sort data files by size (smallest first to fill pipeline faster)
-    data_files.sort(key=lambda f: f.stat().st_size)
+    # Sort data files by size (largest first to keep workers busy)
+    data_files.sort(key=lambda f: f.stat().st_size, reverse=True)
     
     logger.info(f"Starting pipeline: {len(reference_files)} reference, {len(data_files)} data files")
     logger.info("Note: Indexes will be created AFTER all data is loaded for optimal performance")
@@ -169,10 +193,10 @@ def main():
             for future in as_completed(futures):
                 future.result()
     
-    # Phase 2: Process data files with 2 workers (optimal for I/O-bound workload)
-    logger.info(f"Phase 2: Processing {len(data_files)} data files (2 workers)...")
+    # Phase 2: Process data files with 4 workers (balanced for I/O and CPU)
+    logger.info(f"Phase 2: Processing {len(data_files)} data files (4 workers)...")
     
-    with ProcessPoolExecutor(max_workers=2) as executor:
+    with ProcessPoolExecutor(max_workers=4) as executor:
         futures = {
             executor.submit(extract_and_process, f, config.database_url): f.name
             for f in data_files
