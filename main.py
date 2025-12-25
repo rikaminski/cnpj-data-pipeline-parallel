@@ -200,11 +200,12 @@ def main():
         work_mem_session = "2GB"
         logger.info("Mode: TURBO (Optimized for 16GB RAM)")
     else:
-        # User has 32GB+ - Balanced Turbo Mode
-        ingest_workers = 4
-        parallel_reconstruction_workers = 2
-        work_mem_session = "1GB"
-        logger.info("Mode: BALANCED-TURBO (Safe Performance for 32GB RAM)")
+        # User has 32GB+ - Balanced High-Performance Mode
+        # 16 cores available: 8 ingest workers, 4 reconstruction workers
+        ingest_workers = 8
+        parallel_reconstruction_workers = 4
+        work_mem_session = "1GB"  # 1GB * 4 workers = 4GB. Very safe for 32GB RAM.
+        logger.info("Mode: BALANCED-HIGH-PERF (Optimized for 32GB RAM / 16 Cores)")
 
     parser = argparse.ArgumentParser(description="High Performance CNPJ Pipeline")
     parser.add_argument("--skip-index-mgmt", action="store_true", help="Skip index drop/create")

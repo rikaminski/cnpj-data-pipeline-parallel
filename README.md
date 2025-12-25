@@ -1,89 +1,50 @@
-# CNPJ Data Pipeline (v2)
+# CNPJ Data Pipeline Parallel (Performance Research)
 
-Baixa e processa dados de empresas brasileiras da Receita Federal para PostgreSQL.
+Este projeto é uma **pesquisa de performance e otimização** baseada no pipeline original de dados do CNPJ: [caiopizzol/cnpj-data-pipeline](https://github.com/caiopizzol/cnpj-data-pipeline).
 
-## Requisitos
+---
 
-- [uv](https://docs.astral.sh/uv/) - `brew install uv`
-- [just](https://github.com/casey/just) - `brew install just`
-- Docker
+## 🎖️ Créditos e Reconhecimento
 
-## Início Rápido
+Todo o mérito de **processamento, limpeza inicial, preparação dos dados, relações entre tabelas e definição de índices** pertence ao projeto original de [Caio Pizzol](https://github.com/caiopizzol). Este projeto foca exclusivamente em levar essa lógica ao limite da performance através de paralelismo massivo e tuning de recursos (PostgreSQL/Docker/Python).
 
-```bash
-cp .env.example .env
-just up      # Iniciar PostgreSQL
-just run     # Executar pipeline
-```
+---
 
-## Comandos
+## 🚀 Performance: 32 Minutos
 
-```bash
-just install # Instalar dependências
-just up      # Iniciar PostgreSQL
-just down    # Parar PostgreSQL
-just db      # Entrar no banco (psql)
-just run     # Executar pipeline
-just reset   # Limpar e reiniciar banco
-```
+O objetivo desta pesquisa foi reduzir o tempo de processamento total para menos de 40 minutos em hardware doméstico (32GB RAM / 16 Cores / NVMe). 
 
-## Configuração
+### Destaques das Otimizações:
+- **Polars Massivo**: Uso intensivo da biblioteca Polars para leitura batcheada e paralela de CSVs.
+- **Psycopg3 COPY**: Migração para o protocolo de Bulk Load mais rápido disponível para PostgreSQL.
+- **Adaptive Resource Sizing**: O pipeline detecta a RAM disponível e ajusta automaticamente o número de workers e memória de sessão (`BALANCED-HIGH-PERF`).
+- **Postgres Tuning**: Configurações agressivas de `shared_buffers`, `maintenance_work_mem` e uso de tabelas `UNLOGGED` para evitar gargalos de I/O.
+- **Resiliência a Dados Sujos**: Implementação de filtros de truncagem e limpeza automática para lidar com aspas malformadas e campos gigantes nos arquivos da Receita Federal.
 
-```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5435/cnpj
-BATCH_SIZE=50000
-DOWNLOAD_WORKERS=4
-```
+---
 
-## Schema
+## 📋 Instruções de Execução
 
-```
-EMPRESAS (1) ─── (N) ESTABELECIMENTOS
-         ├─── (N) SOCIOS
-         └─── (1) DADOS_SIMPLES
-```
+Para rodar o pipeline com a configuração otimizada:
 
-### empresas
+1. **Configuração inicial**:
+   ```bash
+   cp .env.example .env
+   ```
 
-| Campo             | Descrição                |
-| ----------------- | ------------------------ |
-| cnpj_basico       | PK - 8 primeiros dígitos |
-| razao_social      | Nome empresarial         |
-| natureza_juridica | FK → naturezas_juridicas |
-| capital_social    | Capital em R$            |
-| porte             | 01=ME, 03=EPP, 05=Demais |
+2. **Limpeza e Execução**:
+   (Recomendado limpar volumes antigos para garantir a aplicação das novas otimizações)
+   ```bash
+   docker compose down -v
+   docker compose up --build
+   ```
 
-### estabelecimentos
+---
 
-| Campo                            | Descrição                                    |
-| -------------------------------- | -------------------------------------------- |
-| cnpj_basico, cnpj_ordem, cnpj_dv | PK composta (CNPJ completo)                  |
-| identificador_matriz_filial      | 1=Matriz, 2=Filial                           |
-| situacao_cadastral               | 02=Ativa, 03=Suspensa, 04=Inapta, 08=Baixada |
-| cnae_fiscal_principal            | FK → cnaes                                   |
-| municipio                        | FK → municipios                              |
+## 🛤️ Próximos Passos (Backlog)
 
-### socios
+- [ ] **Integração com Download**: Acoplar a esteira de download resiliente ao processamento paralelo.
+- [ ] **DuckDB Pipeline**: Pesquisa de performance utilizando DuckDB como alternativa/complemento ao PostgreSQL.
+- [ ] **Refinamento de Código**: Revisão modular para garantir manutenibilidade a longo prazo.
+- [ ] **Zstandard Cache**: Implementação de compressão Zstd para aceleração de leitura em I/O intensivo.
 
-| Campo                  | Descrição                    |
-| ---------------------- | ---------------------------- |
-| cnpj_basico            | FK → empresas                |
-| identificador_de_socio | 1=PJ, 2=PF, 3=Estrangeiro    |
-| cnpj_cpf_do_socio      | CPF mascarado (**\*XXXXXX**) |
-| qualificacao_do_socio  | FK → qualificacoes_socios    |
-
-### dados_simples
-
-| Campo              | Descrição         |
-| ------------------ | ----------------- |
-| cnpj_basico        | PK, FK → empresas |
-| opcao_pelo_simples | S=Sim, N=Não      |
-| opcao_pelo_mei     | S=Sim, N=Não      |
-
-## Fonte de Dados
-
-- **URL**: https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj
-- **Encoding**: ISO-8859-1
-- **Separador**: `;`
-- **Datas nulas**: `0` ou `00000000`
-- **Atualização**: Mensal

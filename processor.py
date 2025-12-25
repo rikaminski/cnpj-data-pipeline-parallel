@@ -183,6 +183,8 @@ def process_csv_file(
             null_values=[""],
             ignore_errors=True,
             batch_size=actual_batch_size,
+            quote_char='"',             # standard quoting to clean values
+            truncate_ragged_lines=True,  # skip malformed rows instead of crashing
         )
 
         # Get multiple batches at once to allow overlap between CPU and IO
