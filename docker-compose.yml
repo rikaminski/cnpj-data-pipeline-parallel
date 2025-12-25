@@ -21,14 +21,15 @@ services:
   postgres:
     image: postgres:17-alpine
     container_name: cnpj-pipeline-postgres
+    shm_size: 8gb
     command: >
       postgres
-      -c shared_buffers=4GB
+      -c shared_buffers=2GB
       -c work_mem=128MB
-      -c maintenance_work_mem=4GB
-      -c max_parallel_workers_per_gather=4
-      -c max_parallel_workers=8
-      -c max_parallel_maintenance_workers=4
+      -c maintenance_work_mem=2GB
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_workers=4
+      -c max_parallel_maintenance_workers=2
       -c log_temp_files=0
       -c wal_buffers=256MB
       -c max_wal_size=16GB

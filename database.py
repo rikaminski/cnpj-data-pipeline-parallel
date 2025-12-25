@@ -40,6 +40,46 @@ class Database:
             self.conn.close()
             self.conn = None
 
+    def get_postgres_stats(self) -> dict:
+        """Fetch real-time stats from Postgres about temp files and memory."""
+        self.connect()
+        try:
+            with self.conn.cursor() as cur:
+                # Get temp file usage for current DB
+                cur.execute("SELECT temp_files, temp_bytes FROM pg_stat_database WHERE datname = current_database()")
+                res = cur.fetchone()
+                temp_files = res[0] if res else 0
+                temp_bytes = res[1] if res else 0
+
+                # Get active backends count
+                cur.execute("SELECT count(*) FROM pg_stat_activity WHERE state = 'active'")
+                active_backends = cur.fetchone()[0]
+
+                return {
+                    "temp_files": temp_files,
+                    "temp_bytes_mb": temp_bytes / (1024 * 1024),
+                    "active_backends": active_backends
+                }
+        except Exception:
+            return {}
+
+    def log_active_queries(self):
+        """Log what Postgres is currently doing (for Phase 3 debugging)."""
+        self.connect()
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    SELECT query, wait_event_type, wait_event 
+                    FROM pg_stat_activity 
+                    WHERE state = 'active' AND query NOT LIKE '%pg_stat_activity%'
+                    LIMIT 3
+                """)
+                for row in cur.fetchall():
+                    query_snippet = row[0][:60].replace("\n", " ")
+                    logger.info(f"  [PG ACTIVE] {query_snippet}... | Wait: {row[1]}:{row[2]}")
+        except Exception:
+            pass
+
     def bulk_load(self, df: pl.DataFrame, table_name: str, columns: List[str]):
         """Direct COPY to table (fast, no temp table, no upsert)."""
         if df.is_empty():

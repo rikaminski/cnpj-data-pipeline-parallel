@@ -8,8 +8,11 @@ import logging
 import sys
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import threading
+
 from pathlib import Path
 import zipfile
+import time
 
 from config import config
 from database import Database
@@ -100,7 +103,7 @@ def extract_and_process(zip_path: Path, database_url: str) -> bool:
 
 # No longer needed - indexes are not created in initial.sql
 
-def create_indexes(database_url: str):
+def create_indexes(database_url: str, work_mem_session: str = "1GB", parallel_workers: int = 2):
     """Create indexes and reconstruct tables for global deduplication."""
     logger.info("Starting Phase 3: Reconstruction and Indexing...")
     db = Database(database_url)
@@ -112,14 +115,15 @@ def create_indexes(database_url: str):
         
         # Split by blocks
         blocks = content.split("-- BLOCK:")
-        
         with db.conn.cursor() as cur:
+            # Disable JIT for complex parallel reconstruction to avoid stability issues
+            cur.execute("SET jit = off")
             # Optimize for parallel sorting (crucial for DISTINCT ON)
-            cur.execute("SET max_parallel_workers_per_gather = 4")
+            cur.execute(f"SET max_parallel_workers_per_gather = {parallel_workers}")
             cur.execute("SET max_parallel_workers = 8")
-            # Increase work_mem to 2GB for the session to avoid disk sorts
-            cur.execute("SET work_mem = '2GB'")
-            cur.execute("SET maintenance_work_mem = '4GB'")
+            # Adaptive work_mem to avoid disk sorts (aggressive for 32GB)
+            cur.execute(f"SET work_mem = '{work_mem_session}'")
+            cur.execute("SET maintenance_work_mem = '8GB'")
             
             for block in blocks:
                 if not block.strip():
@@ -134,8 +138,30 @@ def create_indexes(database_url: str):
                     monitor = ResourceMonitor(interval=2.0)
                     monitor.start()
                     
+                    stop_event = threading.Event()
+                    
+                    # Log PG stats periodically during long SQL blocks
+                    def pg_logger():
+                        db_stats = Database(database_url)
+                        try:
+                            while not stop_event.is_set():
+                                db_stats.log_active_queries()
+                                stats = db_stats.get_postgres_stats()
+                                if stats.get("temp_bytes_mb", 0) > 0:
+                                    logger.info(f"  [PG DISK] Temp Files: {stats['temp_files']} | Vol: {stats['temp_bytes_mb']:.1f}MB")
+                                # Wait with timeout to respond to stop_event
+                                stop_event.wait(timeout=15)
+                        finally:
+                            db_stats.disconnect()
+
+                    pg_thread = threading.Thread(target=pg_logger, daemon=True)
+                    pg_thread.start()
+
                     cur.execute(sql)
                     db.conn.commit()
+                    
+                    stop_event.set()
+                    pg_thread.join(timeout=1.0)
                     
                     summary = monitor.stop()
                     from utils import log_resource_summary
@@ -158,6 +184,28 @@ def create_indexes(database_url: str):
         db.disconnect()
 
 def main():
+    import psutil
+    ram_gb = psutil.virtual_memory().total / (1024**3)
+    logger.info(f"System Check: {ram_gb:.1f} GB RAM detected")
+    
+    # Adaptive sizing (Adjusted for 32GB machine)
+    if ram_gb < 12:
+        ingest_workers = 2
+        parallel_reconstruction_workers = 2
+        work_mem_session = "1GB"
+        logger.info("Mode: SAFE (Optimized for <12GB RAM)")
+    elif ram_gb < 24:
+        ingest_workers = 4
+        parallel_reconstruction_workers = 4
+        work_mem_session = "2GB"
+        logger.info("Mode: TURBO (Optimized for 16GB RAM)")
+    else:
+        # User has 32GB+ - Balanced Turbo Mode
+        ingest_workers = 4
+        parallel_reconstruction_workers = 2
+        work_mem_session = "1GB"
+        logger.info("Mode: BALANCED-TURBO (Safe Performance for 32GB RAM)")
+
     parser = argparse.ArgumentParser(description="High Performance CNPJ Pipeline")
     parser.add_argument("--skip-index-mgmt", action="store_true", help="Skip index drop/create")
     args = parser.parse_args()
@@ -193,10 +241,10 @@ def main():
             for future in as_completed(futures):
                 future.result()
     
-    # Phase 2: Process data files with 4 workers (balanced for I/O and CPU)
-    logger.info(f"Phase 2: Processing {len(data_files)} data files (4 workers)...")
+    # Phase 2: Process data files with adaptive workers
+    logger.info(f"Phase 2: Processing {len(data_files)} data files ({ingest_workers} workers)...")
     
-    with ProcessPoolExecutor(max_workers=4) as executor:
+    with ProcessPoolExecutor(max_workers=ingest_workers) as executor:
         futures = {
             executor.submit(extract_and_process, f, config.database_url): f.name
             for f in data_files
@@ -207,9 +255,9 @@ def main():
             completed += 1
             logger.info(f"Progress: {completed}/{len(data_files)}")
     
-    # Recreate indexes after load
+    # Recreate indexes after load with adaptive memory
     if not args.skip_index_mgmt:
-        create_indexes(config.database_url)
+        create_indexes(config.database_url, work_mem_session, parallel_reconstruction_workers)
     
     logger.info("✓✓✓ Pipeline completed!")
 
